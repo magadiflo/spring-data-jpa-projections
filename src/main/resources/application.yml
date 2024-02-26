@@ -1,1 +1,24 @@
+server:
+  port: 8080
+  error:
+    include-message: always
 
+spring:
+  application:
+    name: spring-boot-jpa-projections
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/db_spring_data_jpa
+    username: admin
+    password: magadiflo
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
