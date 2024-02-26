@@ -2,6 +2,7 @@
 
 - Tutorial tomado del canal de youtube de **SACAViX Tech**
 - [Documentación Oficial de Spring Projections](https://docs.spring.io/spring-data/jpa/reference/repositories/projections.html)
+- [Uso de Projections en proyecto spring-boot-web-crud]( https://github.com/magadiflo/spring-boot-web-crud.git)
 
 ## ¿Qué es una proyección?
 
@@ -69,7 +70,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: create-drop
     properties:
       hibernate:
         format_sql: true
@@ -124,3 +125,263 @@ Al ejecutar la aplicación, las tablas se crean automáticamente gracias a la co
 Aunque no definimos explícitamente la relación entre personas y direcciones, esa relación lo haremos a nivel de código,
 por esa razón es que en la entidad `persons` establecimos el atributo `address_id` donde guardaremos la referencia
 a la tabla `address`.
+
+## Creando proyecciones
+
+Utilizando el repositorio `IPersonRepository` implementamos los distintos tipos de proyecciones.
+
+### Proyección cerrada
+
+Como observamos, el método retorna una interfaz de proyección cerrada.
+
+````java
+public interface IPersonRepository extends JpaRepository<Person, Long> {
+    // Using Closed Projection
+    @Query(value = """
+            SELECT p.name AS name, p.phone_number AS phoneNumber, a.street AS street
+            FROM persons AS p
+                INNER JOIN addresses AS a ON(p.address_id = a.id)
+            WHERE p.id = :id
+            """, nativeQuery = true)
+    IPersonLocation getPersonLocation(@Param("id") Long personId);
+}
+````
+
+La interfaz de proyección cerrada define los atributos que la consulta anterior retorna anteponiendo el `get`,
+por ejemplo para el `name` definimos el `getName()`, así con los demás atributos:
+
+````java
+
+/**
+ * Interface Closed Projection
+ * <p>
+ * Una interfaz de proyección cuyos métodos de acceso coinciden con las propiedades
+ * del agregado de destino se considera una proyección cerrada.
+ */
+public interface IPersonLocation {
+    String getName();
+
+    String getPhoneNumber();
+
+    String getStreet();
+}
+````
+
+**IMPORTANTE**
+> Es importante que en la `consulta SQL`, a cada columna le definamos un `Alias`, ese `Alias` deberá ser igual al
+> atributo que definimos en la entidad. Por ejemplo, en la entidad `Person` definimos el atributo llamado `phoneNumber`,
+> eso significa que el alias deberá tener el mismo nombre `phoneNumber`.
+
+### Proyección abierta - con @Value
+
+Todas las consultas serán las mismas, lo que cambia es el tipo de proyección que se retorna. En este caso, estamos
+retornando una proyección abierta, ya que la interfaz `IPersonFullLocation` define un atributo con el `@Value`:
+
+````java
+public interface IPersonRepository extends JpaRepository<Person, Long> {
+    // Using Open Projection
+    @Query(value = """
+            SELECT p.name AS name, p.phone_number AS phoneNumber, a.street AS street
+            FROM persons AS p
+                INNER JOIN addresses AS a ON(p.address_id = a.id)
+            WHERE p.id = :id
+            """, nativeQuery = true)
+    IPersonFullLocation getPersonFullLocation(@Param("id") Long personId);
+}
+````
+
+Usamos la anotación `@Value` e internamente usamos el `target` que contendrá el objeto consultado.
+
+````java
+/**
+ * Interface Open Projection - with @Value
+ * <p>
+ * Los métodos de acceso en las interfaces de proyección también se pueden utilizar para
+ * calcular nuevos valores mediante la anotación @Value.
+ * <p>
+ * Una interfaz de proyección que utiliza @Value es una proyección abierta. Spring Data no
+ * puede aplicar optimizaciones de ejecución de consultas en este caso, porque la expresión
+ * SpEL podría usar cualquier atributo de la raíz agregada.
+ */
+public interface IPersonFullLocation {
+    @Value("#{target.name + ' ' + target.phoneNumber + ' ' + target.street}")
+    String getFullLocation();
+}
+````
+
+### Proyección abierta - con Default method
+
+A diferencia de la anotación `@Value`, en este tipo de proyección retornado por la consulta, podemos hacer uso
+del método por `default` que nos ofrece las interfaces en java:
+
+````java
+public interface IPersonRepository extends JpaRepository<Person, Long> {
+    // Using a projection interface using a default method for custom logic
+    @Query(value = """
+            SELECT p.name AS name, p.phone_number AS phoneNumber, a.street AS street
+            FROM persons AS p
+                INNER JOIN addresses AS a ON(p.address_id = a.id)
+            WHERE p.id = :id
+            """, nativeQuery = true)
+    IPersonLocationDefault getPersonLocationDefault(@Param("id") Long personId);
+}
+````
+
+````java
+/**
+ * Interface Open Projection - with Default Method
+ * <p>
+ * Una interfaz de proyección que utiliza un método predeterminado para
+ * lógica personalizada.
+ * <p>
+ * Este enfoque requiere que usted pueda implementar lógica basada exclusivamente en
+ * los otros métodos de acceso expuestos en la interfaz de proyección.
+ */
+public interface IPersonLocationDefault {
+    String getName();
+
+    String getPhoneNumber();
+
+    String getStreet();
+
+    default String getFullLocation() {
+        return getName() + ": " + getPhoneNumber() + " - " + getStreet();
+    }
+}
+````
+
+### Proyección basado en clase
+
+Este tipo de proyección usa la interfaz `Tuple` importado de `jakarta.persistence`. Interfaz para extraer los elementos
+de una tupla de resultados de consulta.
+
+````java
+// Class based
+@Query(value = """
+        SELECT p.name AS name, p.phone_number AS phoneNumber, a.street AS street
+        FROM persons AS p
+            INNER JOIN addresses AS a ON(p.address_id = a.id)
+        WHERE p.id = :id
+        """, nativeQuery = true)
+Tuple getPersonLocationDTO(@Param("id") Long personId);
+````
+
+El resultado que nos retorne la consulta, será del tipo `Tuple`. Ahora, para tener un mejor control de los datos debemos
+extraer el resultado de la tupla usando sus métodos como el `.get()`, y los valores rellenarlos en otra clase. En
+nuestro caso, los valores contenidos en la tupla serán rellenados en el record siguiente:
+
+````java
+// Usado en la proyección que recupera una Tuple y los datos serán volcados a este record
+public record PersonLocationDTO(String name, String phoneNumber, String street) {
+}
+````
+
+Más adelante veremos cómo poblar este record con los datos de la tuple, para ser exactos, eso se hará en su endpoint
+correspondiente.
+
+### Proyección usando Named Query
+
+Esta consulta devolverá el record `PersonLocationDTO2`, pero la construcción de la consulta misma es lo que varía.
+En este caso le estamos dando un valor a la anotación query de nombre `getPersonLocationDTONamingQuery`.
+
+````java
+/**
+ * Using named query
+ * <p>
+ * El getPersonLocationDTONamingQuery, debe estar en una anotación dentro de su entidad
+ * correspondiente
+ */
+@Query(name = "getPersonLocationDTONamingQuery", nativeQuery = true)
+PersonLocationDTO2 getPersonLocationDTO2(@Param("id") Long personId);
+````
+
+Definiendo el record que devolverá la consulta anterior:
+
+````java
+// Using named query
+public record PersonLocationDTO2(String name, String phoneNumber, String street) {
+}
+````
+
+Ahora, debemos ir a la entidad `Person` y agregar las anotación `@NamedNativeQuery y @SqlResultSetMapping` cons sus
+configuraciones:
+
+````java
+
+@NamedNativeQuery(
+        name = "getPersonLocationDTONamingQuery",
+        query = """
+                SELECT p.name AS name, p.phone_number AS phoneNumber, a.street AS street
+                FROM persons AS p
+                    INNER JOIN addresses AS a ON(p.address_id = a.id)
+                WHERE p.id = :id
+                """,
+        resultSetMapping = "PersonLocationDTO2Mapping"
+)
+@SqlResultSetMapping(
+        name = "PersonLocationDTO2Mapping",
+        classes = @ConstructorResult(
+                targetClass = PersonLocationDTO2.class,
+                columns = {
+                        @ColumnResult(name = "name", type = String.class),
+                        @ColumnResult(name = "phoneNumber", type = String.class),
+                        @ColumnResult(name = "street", type = String.class)
+                }
+        )
+)
+@Data
+@Entity
+@Table(name = "persons")
+public class Person {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+    private String phoneNumber;
+    private String email;
+    private Long addressId;
+}
+````
+
+Notar que en el `name` de la anotación `@NamedNativeQuery` es el mismo que definimos en el value de la anotación query.
+En el `resultSetMapping` definimos el nombre `PersonLocationDTO2Mapping` que enlazará a la
+anotación `@SqlResultSetMapping` a través de su `name`. En la anotación `@SqlResultSetMapping` definimos un
+`targetClass` que en nuestro caso será el record que vimos en el apartado superior y las demás configuraciones se
+sobreentiende.
+
+### Proyección Dinámica
+
+Hasta ahora, hemos utilizado el tipo de proyección como tipo de retorno o tipo de elemento de una colección. Sin
+embargo, es posible que desee seleccionar el tipo que se utilizará en el momento de la invocación (lo que lo hace
+dinámico). Para aplicar proyecciones dinámicas, utilice un método de consulta como el que se muestra en el siguiente
+ejemplo:
+
+````java
+/**
+ * Dynamically, usando proyección genérica.
+ * <p>
+ * El class type podría ser cualquier clase que hemos definido en las otras consultas,
+ * ya que estamos trabajando todas sobre la misma consulta.
+ */
+@Query(value = """
+        SELECT p.name AS name, p.phone_number AS phoneNumber, a.street AS street
+        FROM persons AS p
+            INNER JOIN addresses AS a ON(p.address_id = a.id)
+        WHERE p.id = :id
+        """, nativeQuery = true)
+<T> T getPersonLocationDynamically(@Param("id") Long personId, Class<T> type);
+````
+
+Aquí definimos otra proyección dinámica, esta vez nos retorna una colección:
+
+````java
+public interface IPersonRepository extends JpaRepository<Person, Long> {
+    @Query(value = """
+            SELECT p.name AS name, p.phone_number AS phoneNumber, a.street AS street
+            FROM persons AS p
+                INNER JOIN addresses AS a ON(p.address_id = a.id)
+            WHERE p.name LIKE %:name%
+            """, nativeQuery = true)
+    <T> Collection<T> getPersonLocationDynamicallyList(@Param("name") String name, Class<T> type);
+}
+````
