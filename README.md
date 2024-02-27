@@ -447,3 +447,151 @@ public class PersonRestController {
 
 }
 ````
+
+## Resultados
+
+### Interfaz cerrada
+
+````bash
+$  curl -v http://localhost:8080/api/v1/persons/interface-closed | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "name": "Persona 0",
+  "street": "Street 0",
+  "phoneNumber": "920632480"
+}
+````
+
+### Interfaz abierta
+
+````bash
+$ curl -v http://localhost:8080/api/v1/persons/interface-open | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "fullLocation": "Persona 0 920632480 Street 0"
+}
+````
+
+### Interfaz abierta con métodos por default
+
+````bash
+$ curl -v http://localhost:8080/api/v1/persons/interface-open-default-method | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "name": "Persona 0",
+  "street": "Street 0",
+  "phoneNumber": "920632480",
+  "fullLocation": "Persona 0: 920632480 - Street 0"
+}
+````
+
+### Basada en clase
+
+````bash
+$ url -v http://localhost:8080/api/v1/persons/class-based | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "name": "PERSONA 0",
+  "phoneNumber": "920632480",
+  "street": "STREET 0"
+}
+````
+
+### Basada en clase con named query
+
+````bash
+$ curl -v http://localhost:8080/api/v1/persons/class-based-named-query | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "name": "Persona 0",
+  "phoneNumber": "920632480",
+  "street": "Street 0"
+}
+````
+
+### Dinamically
+
+````bash
+$ curl -v http://localhost:8080/api/v1/persons/dinamically | jq
+
+>
+< HTTP/1.1 200
+<
+
+{
+  "name": "Persona 0",
+  "street": "Street 0",
+  "phoneNumber": "920632480"
+}
+````
+
+### Dinamically List
+
+````bash
+$ curl -v http://localhost:8080/api/v1/persons/dinamically-list | jq
+
+< HTTP/1.1 200
+<
+[
+  {
+    "name": "Persona 0",
+    "street": "Street 0",
+    "phoneNumber": "920632480"
+  },
+  {
+    "name": "Persona 1",
+    "street": "Street 1",
+    "phoneNumber": "921632481"
+  },
+  {
+    "name": "Persona 2",
+    "street": "Street 2",
+    "phoneNumber": "922632482"
+  },
+  {
+    "name": "Persona 3",
+    "street": "Street 3",
+    "phoneNumber": "923632483"
+  },
+  {
+    "name": "Persona 4",
+    "street": "Street 4",
+    "phoneNumber": "924632484"
+  },
+  {
+    "name": "Persona 5",
+    "street": "Street 5",
+    "phoneNumber": "925632485"
+  },
+  {
+    "name": "Persona 6",
+    "street": "Street 6",
+    "phoneNumber": "926632486"
+  },
+  {
+    "name": "Persona 7",
+    "street": "Street 7",
+    "phoneNumber": "927632487"
+  },
+  {
+    "name": "Persona 8",
+    "street": "Street 8",
+    "phoneNumber": "928632488"
+  }
+]
+````
