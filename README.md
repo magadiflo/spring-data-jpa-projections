@@ -3,10 +3,12 @@
 - Tutorial tomado del canal de youtube de **SACAViX Tech**
 - [Documentación Oficial de Spring Projections](https://docs.spring.io/spring-data/jpa/reference/repositories/projections.html)
 - [Uso de Projections en proyecto spring-boot-web-crud]( https://github.com/magadiflo/spring-boot-web-crud.git)
+- [La mejor forma de obtener una proyección DTO de Spring Data JPA](https://vladmihalcea.com/spring-jpa-dto-projection)
 
 ## ¿Qué es una proyección?
 
-Es un mecanismo por el cual podemos obtener o acceder a elementos particulares de nuestro modelo de datos.
+Es un mecanismo por el cual podemos obtener o acceder a elementos particulares de nuestro modelo de datos. **Las
+proyecciones le permiten seleccionar solo las columnas que necesita para un caso de uso determinado.**
 
 `Spring Data Projection` permite hacer uso de este mecanismo en Spring.
 
@@ -126,13 +128,17 @@ Aunque no definimos explícitamente la relación entre personas y direcciones, e
 por esa razón es que en la entidad `persons` establecimos el atributo `address_id` donde guardaremos la referencia
 a la tabla `address`.
 
-## Creando proyecciones
+---
+
+# Creando proyecciones
 
 Utilizando el repositorio `IPersonRepository` implementamos los distintos tipos de proyecciones.
 
-### Proyección cerrada
+---
 
-Como observamos, el método retorna una interfaz de proyección cerrada.
+## Proyección cerrada
+
+Como observamos, el método `getPersonLocation` retorna una interfaz de proyección cerrada `IPersonLocation`:
 
 ````java
 public interface IPersonRepository extends JpaRepository<Person, Long> {
@@ -147,8 +153,12 @@ public interface IPersonRepository extends JpaRepository<Person, Long> {
 }
 ````
 
-La interfaz de proyección cerrada define los atributos que la consulta anterior retorna anteponiendo el `get`,
-por ejemplo para el `name` definimos el `getName()`, así con los demás atributos:
+La interfaz de proyección cerrada `IPersonLocation` define métodos en función de las columnas que retorna la
+consulta `SQL` anterior.
+
+Se deberá anteponer el `get` al nombre de cada método, por ejemplo, si en la consulta `SQL` tenemos el alias `name`,
+entonces definimos el método `getName()` en la interfaz de proyección cerrada, del mismo modo se procederá con las
+otras columnas:
 
 ````java
 
@@ -170,9 +180,9 @@ public interface IPersonLocation {
 **IMPORTANTE**
 > Es importante que en la `consulta SQL`, a cada columna le definamos un `Alias`, ese `Alias` deberá ser igual al
 > atributo que definimos en la entidad. Por ejemplo, en la entidad `Person` definimos el atributo llamado `phoneNumber`,
-> eso significa que el alias deberá tener el mismo nombre `phoneNumber`.
+> eso significa que el alias en la consulta `SQL` deberá tener el mismo nombre `phoneNumber`.
 
-### Proyección abierta - con @Value
+## Proyección abierta - con @Value
 
 Todas las consultas serán las mismas, lo que cambia es el tipo de proyección que se retorna. En este caso, estamos
 retornando una proyección abierta, ya que la interfaz `IPersonFullLocation` define un atributo con el `@Value`:
@@ -209,7 +219,7 @@ public interface IPersonFullLocation {
 }
 ````
 
-### Proyección abierta - con Default method
+## Proyección abierta - con Default method
 
 A diferencia de la anotación `@Value`, en este tipo de proyección retornado por la consulta, podemos hacer uso
 del método por `default` que nos ofrece las interfaces en java:
@@ -250,7 +260,7 @@ public interface IPersonLocationDefault {
 }
 ````
 
-### Proyección basado en clase
+## Proyección basado en clase
 
 Este tipo de proyección usa la interfaz `Tuple` importado de `jakarta.persistence`. Interfaz para extraer los elementos
 de una tupla de resultados de consulta.
@@ -276,10 +286,24 @@ public record PersonLocationDTO(String name, String phoneNumber, String street) 
 }
 ````
 
-Más adelante veremos cómo poblar este record con los datos de la tuple, para ser exactos, eso se hará en su endpoint
-correspondiente.
+Adelantándonos a lo que veremos más adelante en el controlador, de la siguiente manera poblaremos el record anterior
+con los datos de la tuple:
 
-### Proyección usando Named Query
+````java
+
+@GetMapping(path = "/class-based")
+public PersonLocationDTO getSampleInterfaceClassBasedProjection() {
+    Tuple tuple = this.personRepository.getPersonLocationDTO(1L);
+
+    String name = tuple.get("name", String.class);
+    String phoneNumber = tuple.get("phoneNumber", String.class);
+    String street = tuple.get("street", String.class);
+
+    return new PersonLocationDTO(name.toUpperCase(), phoneNumber.toUpperCase(), street.toUpperCase());
+}
+````
+
+## Proyección usando Named Query
 
 Esta consulta devolverá el record `PersonLocationDTO2`, pero la construcción de la consulta misma es lo que varía.
 En este caso le estamos dando un valor a la anotación query de nombre `getPersonLocationDTONamingQuery`.
@@ -349,7 +373,7 @@ anotación `@SqlResultSetMapping` a través de su `name`. En la anotación `@Sql
 `targetClass` que en nuestro caso será el record que vimos en el apartado superior y las demás configuraciones se
 sobreentiende.
 
-### Proyección Dinámica
+## Proyección Dinámica
 
 Hasta ahora, hemos utilizado el tipo de proyección como tipo de retorno o tipo de elemento de una colección. Sin
 embargo, es posible que desee seleccionar el tipo que se utilizará en el momento de la invocación (lo que lo hace
