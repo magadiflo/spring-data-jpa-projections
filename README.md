@@ -954,3 +954,133 @@ select
     order by
         pc1_0.id
 ````
+
+## Obteniendo un Record DTO projection
+
+Si bien la proyección Proxy es una buena solución, en realidad es tan fácil usar un `Java record` como el siguiente:
+
+````java
+public record PostCommentRecord(Long id, String title, String review) {
+}
+````
+
+`PostCommentRecord` tiene una definición muy compacta, pero brinda soporte para los métodos `equals`, `hashCode`
+y `toString`.
+
+Para usar `PostCommentRecord` en nuestra proyección, **necesitamos cambiar la consulta `JPQL` para usar la expresión
+constructora**, como se ilustra en el siguiente ejemplo:
+
+````java
+public interface IPostCommentRepository extends JpaRepository<PostComment, Long> {
+    /* other methods */
+    @Query("""
+            SELECT new dev.magadiflo.projections.app.persistence.projections.PostCommentRecord(p.id AS id,
+                                        p.title AS title,
+                                        pc.review AS review)
+            FROM PostComment AS pc
+                JOIN pc.post AS p
+            WHERE p.title LIKE :postTitle
+            ORDER BY pc.id
+            """)
+    List<PostCommentRecord> findCommentRecordByTitle(@Param("postTitle") String postTitle);
+}
+````
+
+Para usar el record `PostCommentRecord` dentro de la consulta `JPQL` debemos especificar el nombre completo de la clase.
+En nuestro caso, si vemos la consulta JPQL anterior, veremos que estamos usamos el nombre completo de la clase, tal
+como sigue:
+
+````
+dev.magadiflo.projections.app.persistence.projections.PostCommentRecord(...)
+````
+
+Ahora, existen el proyecto [Hypersistence Utils](https://github.com/vladmihalcea/hypersistence-utils) que proporciona
+un `ClassImportIntegrator` con el cual podemos usar el nombre de clase simple en las consultas JPQL de expresión del
+constructor. **En el tutorial se muestra su configuración, pero en nuestro caso, como no tenemos dicha dependencia,
+y además no quiero agregar más complejidad, seguiremos utilizando el nombre completo de la clase para usarlo dentro de
+la consulta `JPQL`.**
+
+Ahora, al llamar al método `findCommentRecordByTitle`, podemos ver que obtenemos el resultado esperado:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping(path = "/api/v1/post-comments")
+public class PostCommentController {
+    /* other methods */
+    @GetMapping(path = "/record-dto-projection")
+    public ResponseEntity<Map<String, Object>> getCommentRecordByTitle(@RequestParam String postTitle) {
+        List<PostCommentRecord> postCommentRecords = this.postCommentRepository.findCommentRecordByTitle(postTitle);
+        HashMap<String, Object> response = new HashMap<>();
+
+        if (!postCommentRecords.isEmpty()) {
+            PostCommentRecord recordFirst = postCommentRecords.getFirst();
+
+            //-------------- Ejemplo para verificar igualdad --------
+            PostCommentRecord recordCompare = new PostCommentRecord(2L, "Revolution Angular 17", "Se vienen nuevos cambios");
+            log.info("¿Record obtenido de la BD es igual al record creado en código?: {}", recordFirst.equals(recordCompare));
+            //--------------
+
+            Long postId = recordFirst.id();
+            String title = recordFirst.title();
+
+            List<String> reviewList = new ArrayList<>();
+            postCommentRecords.forEach(record -> {
+                String review = record.review();
+                reviewList.add(review);
+            });
+
+            response.put("id", postId);
+            response.put("title", title);
+            response.put("reviews", reviewList);
+        }
+        return ResponseEntity.ok(response);
+    }
+}
+````
+
+Y, a diferencia del Proxy basado en interfaz, la igualdad funciona como se esperaba ahora. **Por lo tanto, la solución
+de Java Record es mucho mejor que la de Proxy basada en la interfaz.**
+
+````
+ //-------------- Ejemplo para verificar igualdad --------
+PostCommentRecord recordCompare = new PostCommentRecord(2L, "Revolution Angular 17", "Se vienen nuevos cambios");
+log.info("¿Record obtenido de la BD es igual al record creado en código?: {}",recordFirst.equals(recordCompare));
+//--------------
+````
+
+````bash
+$ curl -v -G --data "postTitle=Revolution+Angular+17" http://localhost:8080/api/v1/post-comments/record-dto-projection | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "reviews": [
+    "Se vienen nuevos cambios",
+    "La nueva sintaxis parece se ve más entendible"
+  ],
+  "id": 2,
+  "title": "Revolution Angular 17"
+}
+````
+
+Consulta `SQL` generado:
+
+````sql
+select
+        p1_0.id,
+        p1_0.title,
+        pc1_0.review 
+    from
+        post_comments pc1_0 
+    join
+        posts p1_0 
+            on p1_0.id=pc1_0.post_id 
+    where
+        p1_0.title like replace(?, '\\', '\\\\') 
+    order by
+        pc1_0.id
+````

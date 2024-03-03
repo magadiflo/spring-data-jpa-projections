@@ -1,6 +1,7 @@
 package dev.magadiflo.projections.app.web;
 
 import dev.magadiflo.projections.app.persistence.projections.IPostCommentSummary;
+import dev.magadiflo.projections.app.persistence.projections.PostCommentRecord;
 import dev.magadiflo.projections.app.persistence.repository.IPostCommentRepository;
 import jakarta.persistence.Tuple;
 import lombok.RequiredArgsConstructor;
@@ -70,4 +71,32 @@ public class PostCommentController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping(path = "/record-dto-projection")
+    public ResponseEntity<Map<String, Object>> getCommentRecordByTitle(@RequestParam String postTitle) {
+        List<PostCommentRecord> postCommentRecords = this.postCommentRepository.findCommentRecordByTitle(postTitle);
+        HashMap<String, Object> response = new HashMap<>();
+
+        if (!postCommentRecords.isEmpty()) {
+            PostCommentRecord recordFirst = postCommentRecords.getFirst();
+
+            //-------------- Ejemplo para verificar igualdad --------
+            PostCommentRecord recordCompare = new PostCommentRecord(2L, "Revolution Angular 17", "Se vienen nuevos cambios");
+            log.info("¿Record obtenido de la BD es igual al record creado en código?: {}", recordFirst.equals(recordCompare));
+            //--------------
+
+            Long postId = recordFirst.id();
+            String title = recordFirst.title();
+
+            List<String> reviewList = new ArrayList<>();
+            postCommentRecords.forEach(record -> {
+                String review = record.review();
+                reviewList.add(review);
+            });
+
+            response.put("id", postId);
+            response.put("title", title);
+            response.put("reviews", reviewList);
+        }
+        return ResponseEntity.ok(response);
+    }
 }
