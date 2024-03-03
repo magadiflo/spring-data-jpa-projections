@@ -730,3 +730,107 @@ public interface IPostRepository extends JpaRepository<Post, Long> {
 public interface IPostCommentRepository extends JpaRepository<PostComment, Long> {
 }
 ````
+
+## Obteniendo un Tuple projection
+
+Esta opción consiste en mapear la proyección SQL grabando un contenedor JPA Tuple como este:
+
+````java
+public interface IPostCommentRepository extends JpaRepository<PostComment, Long> {
+    @Query("""
+            SELECT p.id AS id,
+                    p.title AS title,
+                    pc.review AS review
+            FROM PostComment AS pc
+                JOIN pc.post AS p
+            WHERE p.title LIKE :postTitle
+            ORDER BY pc.id
+            """)
+    List<Tuple> findCommentTupleByTitle(@Param("postTitle") String postTitle);
+}
+````
+
+**NOTA**
+
+> La consulta definida en el `@Query` anterior es una consulta `JPQL`
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping(path = "/api/v1/post-comments")
+public class PostCommentController {
+
+    private final IPostCommentRepository postCommentRepository;
+
+    @GetMapping(path = "/tuples")
+    public ResponseEntity<Map<String, Object>> searchEmployees(@RequestParam String postTitle) {
+        List<Tuple> postWithPostComments = this.postCommentRepository.findCommentTupleByTitle(postTitle);
+        HashMap<String, Object> response = new HashMap<>();
+
+        if (!postWithPostComments.isEmpty()) {
+            Tuple postTuple = postWithPostComments.getFirst();
+
+            Long postId = postTuple.get("id", Long.class);
+            String title = postTuple.get("title", String.class);
+
+            List<String> reviewList = new ArrayList<>();
+            postWithPostComments.forEach(tuple -> {
+                String review = tuple.get("review", String.class);
+                reviewList.add(review);
+            });
+
+            response.put("id", postId);
+            response.put("title", title);
+            response.put("reviews", reviewList);
+        }
+
+        return ResponseEntity.ok(response);
+    }
+
+}
+````
+
+Realizamos la petición al endpoint enviándole el título del post como parámetro solicitado:
+
+````bash
+curl -v -G --data "postTitle=Revolution+Angular+17" http://localhost:8080/api/v1/post-comments/tuples | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "reviews": [
+    "Se vienen nuevos cambios",
+    "La nueva sintaxis parece se ve más entendible"
+  ],
+  "id": 2,
+  "title": "Revolution Angular 17"
+}
+````
+
+La consulta `SQL` generada en el `LOG` del ide IntelliJ IDEA es el siguiente:
+
+````sql
+select
+        p1_0.id,
+        p1_0.title,
+        pc1_0.review 
+    from
+        post_comments pc1_0 
+    join
+        posts p1_0 
+            on p1_0.id=pc1_0.post_id 
+    where
+        p1_0.title like replace(?, '\\', '\\\\') 
+    order by
+        pc1_0.id
+````
+
+Sin embargo, si bien el `Tuple` nos permite recuperar los valores de las columnas por su alias de columna, aún
+necesitamos realizar una conversión de tipos, y esa es una limitación importante, ya que el cliente tendrá que saber de
+antemano el tipo real al que desea convertir.
+
+Sería mucho mejor si el contenedor de proyección fuera seguro.
+

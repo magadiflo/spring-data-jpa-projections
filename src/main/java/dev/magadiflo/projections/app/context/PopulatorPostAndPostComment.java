@@ -30,7 +30,7 @@ public class PopulatorPostAndPostComment implements InitializingBean {
         post1.setVersion(2);
 
         Post post2 = new Post();
-        post2.setTitle("Revolución de Angular 17");
+        post2.setTitle("Revolution Angular 17");
         post2.setCreatedOn(LocalDate.parse("2024-01-20"));
         post2.setCreatedBy("Martín");
         post2.setUpdatedOn(LocalDate.parse("2024-02-15"));
