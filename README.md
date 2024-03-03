@@ -619,3 +619,34 @@ $ curl -v http://localhost:8080/api/v1/persons/dinamically-list | jq
   }
 ]
 ````
+
+---
+
+# [La mejor forma de obtener una proyección DTO de Spring Data JPA](https://vladmihalcea.com/spring-jpa-dto-projection)
+
+Enlace del articulo publicado en LinkedIn por **Vlad Mihalcea**
+
+---
+
+## Por qué utilizar proyecciones DTO
+
+Como expliqué en este artículo, **las proyecciones DTO le permiten seleccionar solo las columnas que necesita para un
+caso de uso determinado.**
+
+A lo largo de mis compromisos de consultoría y capacitación, puedo ver que, muchas veces, los desarrolladores obtienen
+más de lo necesario y la mejor manera de solucionar este problema es utilizar `paginación y proyecciones`.
+
+Si bien **la paginación le permite reducir la cantidad de registros en el conjunto de resultados, las proyecciones le
+permiten reducir la cantidad de columnas que está recuperando**, y esto puede ayudarlo a reducir el tiempo de respuesta
+de la consulta.
+
+## ¿Qué es una proyección DTO?
+
+Una `proyección SQL` es básicamente una consulta que proporciona una **lista de columnas** en la cláusula `SELECT`.
+
+Una `proyección DTO` es un objeto Java que **contiene los valores de columna que fueron obtenidos por una consulta de
+proyección SQL determinada.**
+
+**La proyección DTO puede ser** un `POJO` (Plain Old Java Object), un `JPA Tuple` o un `Java Record`, y podemos
+recuperar todos esos tipos de proyección DTO utilizando Spring Data JPA.
+
