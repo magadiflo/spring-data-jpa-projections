@@ -765,7 +765,7 @@ public class PostCommentController {
     private final IPostCommentRepository postCommentRepository;
 
     @GetMapping(path = "/tuples")
-    public ResponseEntity<Map<String, Object>> searchEmployees(@RequestParam String postTitle) {
+    public ResponseEntity<Map<String, Object>> getPostWithCommentByTitle(@RequestParam String postTitle) {
         List<Tuple> postWithPostComments = this.postCommentRepository.findCommentTupleByTitle(postTitle);
         HashMap<String, Object> response = new HashMap<>();
 
@@ -795,7 +795,7 @@ public class PostCommentController {
 Realizamos la petición al endpoint enviándole el título del post como parámetro solicitado:
 
 ````bash
-curl -v -G --data "postTitle=Revolution+Angular+17" http://localhost:8080/api/v1/post-comments/tuples | jq
+$ curl -v -G --data "postTitle=Revolution+Angular+17" http://localhost:8080/api/v1/post-comments/tuples | jq
 
 >
 < HTTP/1.1 200
@@ -834,3 +834,123 @@ antemano el tipo real al que desea convertir.
 
 Sería mucho mejor si el contenedor de proyección fuera seguro.
 
+## Obtención de una proyección Proxy basada en interfaz
+
+Con Spring Data JPA, podemos mapear la proyección SQL a un DTO que implemente una interfaz, como la siguiente:
+
+````java
+public interface IPostCommentSummary {
+    Long getId();
+
+    String getTitle();
+
+    String getReview();
+}
+````
+
+Los métodos de la interfaz `IPostCommentSummary` definen el nombre del alias de la columna de proyección asociada y el
+tipo que debe utilizarse para emitir el valor de la columna de proyección.
+
+Entre bastidores, `Spring Data JPA` utilizará un `Proxy` que implemente esta interfaz cuando devuelva las referencias a
+objetos `IPostCommentSummary`.
+
+En nuestro caso, podemos definir el método `findCommentSummaryByTitle` del repositorio para que utilice la interfaz
+`IPostCommentSummary` mencionada anteriormente de la siguiente manera:
+
+````java
+public interface IPostCommentRepository extends JpaRepository<PostComment, Long> {
+    /* other methods */
+
+    @Query("""
+            SELECT p.id AS id,
+                    p.title AS title,
+                    pc.review AS review
+            FROM PostComment AS pc
+                JOIN pc.post AS p
+            WHERE p.title LIKE :postTitle
+            ORDER BY pc.id
+            """)
+    List<IPostCommentSummary> findCommentSummaryByTitle(@Param("postTitle") String postTitle);
+}
+````
+
+Y al llamar al método `findCommentSummaryByTitle` del repositorio, ya no tenemos que convertir los valores de
+proyección:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping(path = "/api/v1/post-comments")
+public class PostCommentController {
+
+    private final IPostCommentRepository postCommentRepository;
+
+    /* other methods */
+    @GetMapping(path = "/interface-based-projection")
+    public ResponseEntity<Map<String, Object>> getCommentSummaryByTitle(@RequestParam String postTitle) {
+        List<IPostCommentSummary> postCommentSummaries = this.postCommentRepository.findCommentSummaryByTitle(postTitle);
+        HashMap<String, Object> response = new HashMap<>();
+
+        if (!postCommentSummaries.isEmpty()) {
+            IPostCommentSummary projectionFirst = postCommentSummaries.getFirst();
+
+            Long postId = projectionFirst.getId();
+            String title = projectionFirst.getTitle();
+
+            List<String> reviewList = new ArrayList<>();
+            postCommentSummaries.forEach(projection -> {
+                String review = projection.getReview();
+                reviewList.add(review);
+            });
+
+            response.put("id", postId);
+            response.put("title", title);
+            response.put("reviews", reviewList);
+        }
+        return ResponseEntity.ok(response);
+    }
+}
+````
+
+Mucho mejor, ¿verdad?
+
+Sin embargo, **también existe una desventaja de utilizar la proyección Proxy. No podemos proporcionar una
+implementación específica para `equals` y `hashCode`, y esto limita su usabilidad.**
+
+Por el momento, vamos a ejecutar el proyecto y veamos el resultado obtenido:
+
+````bash
+$ curl -v -G --data "postTitle=Revolution+Angular+17" http://localhost:8080/api/v1/post-comments/interface-based-projection | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "reviews": [
+    "Se vienen nuevos cambios",
+    "La nueva sintaxis parece se ve más entendible"
+  ],
+  "id": 2,
+  "title": "Revolution Angular 17"
+}
+````
+
+SQL generado en consola del IDE:
+
+````sql
+select
+        p1_0.id,
+        p1_0.title,
+        pc1_0.review 
+    from
+        post_comments pc1_0 
+    join
+        posts p1_0 
+            on p1_0.id=pc1_0.post_id 
+    where
+        p1_0.title like replace(?, '\\', '\\\\') 
+    order by
+        pc1_0.id
+````

@@ -1,5 +1,6 @@
 package dev.magadiflo.projections.app.web;
 
+import dev.magadiflo.projections.app.persistence.projections.IPostCommentSummary;
 import dev.magadiflo.projections.app.persistence.repository.IPostCommentRepository;
 import jakarta.persistence.Tuple;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +22,7 @@ public class PostCommentController {
     private final IPostCommentRepository postCommentRepository;
 
     @GetMapping(path = "/tuples")
-    public ResponseEntity<Map<String, Object>> searchEmployees(@RequestParam String postTitle) {
+    public ResponseEntity<Map<String, Object>> getPostWithCommentByTitle(@RequestParam String postTitle) {
         List<Tuple> postWithPostComments = this.postCommentRepository.findCommentTupleByTitle(postTitle);
         HashMap<String, Object> response = new HashMap<>();
 
@@ -42,6 +43,30 @@ public class PostCommentController {
             response.put("reviews", reviewList);
         }
 
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping(path = "/interface-based-projection")
+    public ResponseEntity<Map<String, Object>> getCommentSummaryByTitle(@RequestParam String postTitle) {
+        List<IPostCommentSummary> postCommentSummaries = this.postCommentRepository.findCommentSummaryByTitle(postTitle);
+        HashMap<String, Object> response = new HashMap<>();
+
+        if (!postCommentSummaries.isEmpty()) {
+            IPostCommentSummary projectionFirst = postCommentSummaries.getFirst();
+
+            Long postId = projectionFirst.getId();
+            String title = projectionFirst.getTitle();
+
+            List<String> reviewList = new ArrayList<>();
+            postCommentSummaries.forEach(projection -> {
+                String review = projection.getReview();
+                reviewList.add(review);
+            });
+
+            response.put("id", postId);
+            response.put("title", title);
+            response.put("reviews", reviewList);
+        }
         return ResponseEntity.ok(response);
     }
 
