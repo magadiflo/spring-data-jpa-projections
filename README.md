@@ -650,3 +650,83 @@ proyección SQL determinada.**
 **La proyección DTO puede ser** un `POJO` (Plain Old Java Object), un `JPA Tuple` o un `Java Record`, y podemos
 recuperar todos esos tipos de proyección DTO utilizando Spring Data JPA.
 
+## Entidades
+
+Para este nuevo apartado, usaremos las siguientes entidades relacionadas:
+
+````java
+
+@Data
+@Entity
+@Table(name = "posts")
+public class Post {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String title;
+    private LocalDate createdOn;
+    private String createdBy;
+    private LocalDate updatedOn;
+    private String updatedBy;
+    private Integer version;
+}
+````
+
+````java
+
+@Data
+@Entity
+@Table(name = "post_comments")
+public class PostComment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String review;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "post_id")
+    private Post post;
+}
+````
+
+[**IMPORTANTE (click aquí)**](https://vladmihalcea.com/the-best-way-to-handle-the-lazyinitializationexception/)
+
+> Las asociaciones del tipo `@ManyToOne` y `@OneToOne` (básicamente las que terminan en `...One`), son del tipo
+> `FetchType.EAGER` de manera `predeterminada`.
+>
+> Según el autor de este apartado, menciona: *La recuperación EAGER significa que las asociaciones siempre se recuperan
+> junto con su entidad principal. En realidad, la recuperación EAGER es muy mala desde una perspectiva de rendimiento
+> porque es muy difícil idear una política de recuperación global que se aplique a todos los casos de uso empresarial
+> que pueda tener en su aplicación empresarial.*
+>
+> Una vez que tienes una asociación EAGER, no hay manera de convertirla en LAZY. De esta manera, la asociación siempre
+> se recuperará incluso si el usuario no la necesita necesariamente para un caso de uso particular. Peor aún, si olvida
+> especificar que una asociación EAGER debe ser JOIN FETCH mediante una consulta JPQL, Hibernate emitirá una selección
+> secundaria para cada asociación no inicializada, lo que generará problemas de consulta N+1.
+>
+> Desafortunadamente, JPA 1.0 decidió que `@ManyToOne y @OneToOne` deberían usar `FetchType.EAGER` de manera
+> predeterminada, por lo que ahora debe **marcar explícitamente estas dos asociaciones como** `FetchType.LAZY`.
+>
+> Por esta razón, es mejor utilizar asociaciones `LAZY`. Una asociación LAZY se expone a través de un Proxy, lo que
+> **permite que la capa de acceso a datos cargue la asociación según demanda.** Desafortunadamente, las asociaciones
+> `LAZY` pueden generar `LazyInitializationException`.
+>
+> Para solucionar el problema del `LazyInitializationException` ver en estos enlaces:
+> [JOIN FETCH to the rescue](https://vladmihalcea.com/the-best-way-to-handle-the-lazyinitializationexception/) y
+> [DTO projection to the rescue](https://vladmihalcea.com/the-best-way-to-handle-the-lazyinitializationexception/)
+
+A continuación se muestran las tablas generadas en la base de datos a partir de las entidades anteriores:
+
+![posts_post-comments](./assets/02.post_post-comments.png)
+
+## Repositorios
+
+````java
+public interface IPostRepository extends JpaRepository<Post, Long> {
+}
+````
+
+````java
+public interface IPostCommentRepository extends JpaRepository<PostComment, Long> {
+}
+````
