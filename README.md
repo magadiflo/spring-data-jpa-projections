@@ -1084,3 +1084,143 @@ select
     order by
         pc1_0.id
 ````
+
+## Obteniendo un POJO DTO projection
+
+Sin embargo, si desea tener control absoluto sobre sus clases DTO, entonces un POJO es la solución más flexible.
+
+En nuestro caso, podemos definir la siguiente clase `PostCommentDTO`:
+
+````java
+public class PostCommentDTO {
+    private final Long id;
+    private final String title;
+    private final String review;
+
+    public PostCommentDTO(Long id, String title, String review) {
+        this.id = id;
+        this.title = title;
+        this.review = review;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public String getReview() {
+        return review;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        PostCommentDTO that = (PostCommentDTO) o;
+        return Objects.equals(id, that.id) && Objects.equals(title, that.title) && Objects.equals(review, that.review);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, title, review);
+    }
+}
+````
+
+Y, al igual que con la `proyección Java Record`, podemos obtener el `PostCommentDTO` utilizando la función de expresión
+del constructor `JPQL`:
+
+````java
+public interface IPostCommentRepository extends JpaRepository<PostComment, Long> {
+    /* other methods */
+    @Query("""
+            SELECT new dev.magadiflo.projections.app.persistence.projections.PostCommentDTO(p.id AS id,
+                                        p.title AS title,
+                                        pc.review AS review)
+            FROM PostComment AS pc
+                JOIN pc.post AS p
+            WHERE p.title LIKE :postTitle
+            ORDER BY pc.id
+            """)
+    List<PostCommentDTO> findCommentDTOByTitle(@Param("postTitle") String postTitle);
+}
+````
+
+Y, al llamar al método `findCommentDTOByTitle`, la consulta `JPQL` subyacente va a mapear la proyección del
+registro SQL al objeto Java `PostCommentDTO`:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping(path = "/api/v1/post-comments")
+public class PostCommentController {
+    /* other codes */
+    @GetMapping(path = "/pojo-dto-projection")
+    public ResponseEntity<Map<String, Object>> getCommentDTOByTitle(@RequestParam String postTitle) {
+        List<PostCommentDTO> postCommentDTOS = this.postCommentRepository.findCommentDTOByTitle(postTitle);
+        HashMap<String, Object> response = new HashMap<>();
+
+        if (!postCommentDTOS.isEmpty()) {
+            PostCommentDTO dtoFirst = postCommentDTOS.getFirst();
+
+            //-------------- Ejemplo para verificar igualdad --------
+            PostCommentDTO dtoCompare = new PostCommentDTO(2L, "Revolution Angular 17", "Se vienen nuevos cambios");
+            log.info("¿POJO DTO obtenido de la BD es igual al POJO DTO creado en código?: {}", dtoFirst.equals(dtoCompare)); // True
+            //--------------
+
+            Long postId = dtoFirst.getId();
+            String title = dtoFirst.getTitle();
+
+            List<String> reviewList = new ArrayList<>();
+            postCommentDTOS.forEach(dto -> {
+                String review = dto.getReview();
+                reviewList.add(review);
+            });
+
+            response.put("id", postId);
+            response.put("title", title);
+            response.put("reviews", reviewList);
+        }
+        return ResponseEntity.ok(response);
+    }
+}
+````
+
+````bash
+$ curl -v -G --data "postTitle=Revolution+Angular+17" http://localhost:8080/api/v1/post-comments/pojo-dto-projection | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "reviews": [
+    "Se vienen nuevos cambios",
+    "La nueva sintaxis parece se ve más entendible"
+  ],
+  "id": 2,
+  "title": "Revolution Angular 17"
+}
+````
+
+SQL generado:
+
+````sql
+select
+        p1_0.id,
+        p1_0.title,
+        pc1_0.review 
+    from
+        post_comments pc1_0 
+    join
+        posts p1_0 
+            on p1_0.id=pc1_0.post_id 
+    where
+        p1_0.title like replace(?, '\\', '\\\\') 
+    order by
+        pc1_0.id
+````
