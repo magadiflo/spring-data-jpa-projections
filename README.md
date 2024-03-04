@@ -650,9 +650,25 @@ proyección SQL determinada.**
 **La proyección DTO puede ser** un `POJO` (Plain Old Java Object), un `JPA Tuple` o un `Java Record`, y podemos
 recuperar todos esos tipos de proyección DTO utilizando Spring Data JPA.
 
+## Relaciones de tabla
+
+Para este nuevo apartado usaremos las siguientes tablas `posts` y `post_comments`, que forman una relación
+`one-to-many` a través de la columna `post_id` (Foreign Key) en la tabla `post_comments`.
+
+![posts_post-comments](./assets/02.post_post-comments.png)
+
 ## Entidades
 
-Para este nuevo apartado, usaremos las siguientes entidades relacionadas:
+Las tablas `posts` y `post_comments` mostradas anteriormente fueron generadas a partir de las siguientes entidades y su
+asociación entre ellas:
+
+**IMPORTANTE**
+
+> La asociación que se usa entre las clases de entidad `Post` y `PostComment` es
+> `bidireccional: @OneToMany - @ManyToOne`
+> 
+> Para más información sobre asociaciones `unidireccionales` y `bidireccionales` visitar 
+> [spring-boot-asociaciones-jpa-hibernate](https://github.com/magadiflo/spring-boot-asociaciones-jpa-hibernate)
 
 ````java
 
@@ -668,9 +684,52 @@ public class Post {
     private String createdBy;
     private LocalDate updatedOn;
     private String updatedBy;
+    @Version
     private Integer version;
+
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, mappedBy = "post")
+    private List<PostComment> comments = new ArrayList<>();
+
+    public Post addComment(PostComment comment) {
+        this.comments.add(comment);
+        comment.setPost(this);
+        return this;
+    }
+
+    public void deleteComment(PostComment comment) {
+        this.comments.remove(comment);
+        comment.setPost(null);
+    }
 }
 ````
+
+Dejo documentado el uso de la anotación `@Version`, nunca lo he usado, pero en el tutorial que sigo sí, así que lo
+dejo documentado para saber qué hace.
+
+> `@Version`, especifica el campo de versión o la propiedad de una clase de entidad que sirve como valor de bloqueo
+> optimista. La versión se utiliza para garantizar la integridad al realizar la operación de fusión y para un control de
+> concurrencia optimista.
+>
+> **Solo se debe utilizar una única propiedad o campo de Versión por clase;** las aplicaciones que utilizan más de una
+> propiedad o campo de Versión no serán portátiles.
+>
+> **La propiedad Versión debe asignarse a la tabla principal de la clase de entidad;** las aplicaciones que asignan la
+> propiedad Versión a una tabla que no sea la tabla principal no serán portátiles.
+>
+> Se admiten los siguientes tipos para las propiedades de versión: int, Integer, short, Short, long, Long,
+> java.sql.Timestamp.
+>
+> Según `Chat-GPT`, la anotación `@Version` suele aplicarse a un campo numérico, como un entero o un timestamp, que
+> `se incrementa automáticamente con cada actualización`. Esto permite a Hibernate detectar fácilmente si ha habido
+> cambios en el registro desde que se cargó por última vez.
+>
+> Cuando un objeto es cargado desde la base de datos, Hibernate guarda el valor del campo anotado con `@Version`. Cuando
+> se realiza una actualización en la base de datos, Hibernate compara el valor almacenado en la base de datos con el
+> valor actualizado en el objeto. Si estos valores difieren, significa que el objeto ha sido modificado por otra
+> transacción desde que fue cargado por la transacción actual. En este caso, Hibernate lanzará una excepción de
+> concurrencia, como OptimisticLockException, para manejar la situación de forma adecuada.
+
+Finalmente, se muestra la entidad `PostComment`:
 
 ````java
 
@@ -683,8 +742,8 @@ public class PostComment {
     private Long id;
     private String review;
 
-    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "post_id")
+    @ManyToOne(fetch = FetchType.LAZY)
     private Post post;
 }
 ````
@@ -714,10 +773,6 @@ public class PostComment {
 > Para solucionar el problema del `LazyInitializationException` ver en estos enlaces:
 > [JOIN FETCH to the rescue](https://vladmihalcea.com/the-best-way-to-handle-the-lazyinitializationexception/) y
 > [DTO projection to the rescue](https://vladmihalcea.com/the-best-way-to-handle-the-lazyinitializationexception/)
-
-A continuación se muestran las tablas generadas en la base de datos a partir de las entidades anteriores:
-
-![posts_post-comments](./assets/02.post_post-comments.png)
 
 ## Repositorios
 

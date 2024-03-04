@@ -12,7 +12,7 @@ public class PostComment {
     private Long id;
     private String review;
 
-    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "post_id")
+    @ManyToOne(fetch = FetchType.LAZY)
     private Post post;
 }
