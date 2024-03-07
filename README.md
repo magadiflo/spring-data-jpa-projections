@@ -1613,3 +1613,178 @@ El resultado de la consulta SQL generado en consola es el siguiente:
 Como observamos, solo se ha ejecutado una consulta, nuestra consulta y gracias al uso de las interfaces
 `TupleTransformer` y `ResultListTransformer` es que se ha podido transformar el resultado de la consulta en la
 jerarquía de clases especificadas que finalmente se han convertido en el resultado observado.
+
+## [Mapeo del resultado programáticamente - Forma 02](https://thorben-janssen.com/fetching-dtos-with-to-many-association/)
+
+Anteriormente, hicimos uso de las interfaces `TupleTransformer<PostDTO>` y `ResultListTransformer<PostDTO>` para
+procesar el resultado de la consulta, **consideremos ese apartado como la FORMA 01**.
+
+En esta sección realizaremos el mismo procesamiento de la consulta, pero de manera más programática.
+
+Para eso crearemos otro método en nuestra interfaz `CustomPostRepository`:
+
+````java
+public interface CustomPostRepository {
+    List<PostDTO> findPostDTOByTitle(String postTitle);
+
+    List<PostDTO> findPostDTOByTitleProgrammatically(String postTitle); //<-- Es el nuevo método creado
+}
+````
+
+Los dos beneficios principales de una proyección DTO son que evita la sobrecarga de administración de una proyección de
+entidad y solo selecciona las columnas de la base de datos que necesita en su código comercial. Si asigna el resultado
+de la consulta usted mismo, debe asegurarse de conservar estos beneficios. Eso requiere que utilice una proyección de
+valor escalar y no una proyección de entidad.
+
+Puede recuperar una proyección de valor escalar como un `Object[]` o una interfaz `Tuple`. La interfaz `Tuple` admite
+el acceso basado en alias a sus elementos y es mi representación preferida de una `proyección escalar`. Lo uso en el
+siguiente fragmento de código para obtener el resultado como una `Stream de Tuples`.
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@Repository
+public class CustomPostRepositoryImpl implements CustomPostRepository {
+
+    private final EntityManager entityManager;
+
+    /* other method */
+
+    @Override
+    @SuppressWarnings("unchecked") // Para que no salga el warning en el resultStream
+    public List<PostDTO> findPostDTOByTitleProgrammatically(String postTitleParam) {
+        Stream<Tuple> resultStream = this.entityManager.createNativeQuery("""
+                        SELECT p.id AS p_id,
+                                p.title AS p_title,
+                                pc.id AS pc_id,
+                                pc.review AS pc_review
+                        FROM posts AS p
+                            INNER JOIN post_comments AS pc ON(p.id = pc.post_id)
+                        WHERE p.title = :postTitle
+                        ORDER BY pc.id
+                        """, Tuple.class)
+                .setParameter("postTitle", postTitleParam)
+                .getResultStream(); //Ejecute una consulta SELECT y devuelva los resultados de la consulta como java.util.stream.Stream sin tipo.
+
+        Map<Long, PostDTO> postDTOMap = new LinkedHashMap<>();
+
+        resultStream.forEach(tuple -> {
+            Long postId = tuple.get("p_id", Long.class);
+            String postTitle = tuple.get("p_title", String.class);
+            Long postCommentId = tuple.get("pc_id", Long.class);
+            String postCommentReview = tuple.get("pc_review", String.class);
+
+            PostDTO currentPostDTO = postDTOMap.computeIfAbsent(postId, pId -> new PostDTO(pId, postTitle));
+
+            PostCommentDTO postCommentDTO = new PostCommentDTO(postCommentId, postCommentReview);
+            currentPostDTO.getComments().add(postCommentDTO);
+        });
+
+        return new ArrayList<>(postDTOMap.values());
+    }
+}
+````
+
+El código anterior es similar al código que implementamos con las interfaces `TupleTransformer<PostDTO>` y
+`ResultListTransformer<PostDTO>`, pero en este nuevo caso estamos haciéndolo todo dentro del método y apoyándonos
+de los `stream`.
+
+Creamos un endpoint desde donde llamaremos a nuestro nuevo método implementado:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping(path = "/api/v1/posts")
+public class PostRestController {
+
+    private final PostRepository postRepository;
+
+    /* other code */
+
+    @GetMapping(path = "/dto-with-to-many-associations-program")
+    public ResponseEntity<List<PostDTO>> getPostDTOByTitleProgrammatically(@RequestParam String postTitle) {
+        List<PostDTO> postDTOList = this.postRepository.findPostDTOByTitleProgrammatically(postTitle);
+        return ResponseEntity.ok(postDTOList);
+    }
+}
+````
+
+## Resultados
+
+Se agregó manualmente en la base de datos otro post con el mismo nombre que estamos consultado, además le agregamos
+comentarios. Los resultados se muestran a continuación:
+
+````bash
+$ url -v -G --data "postTitle=Revolution+Angular+17" http://localhost:8080/api/v1/posts/dto-with-to-many-associations-program | jq
+
+>
+< HTTP/1.1 200
+<
+[
+  {
+    "id": 2,
+    "title": "Revolution Angular 17",
+    "comments": [
+      {
+        "id": 2,
+        "review": "Se vienen nuevos cambios"
+      },
+      {
+        "id": 3,
+        "review": "La nueva sintaxis parece se ve más entendible"
+      },
+      {
+        "id": 4,
+        "review": "Se ha agregado el uso de Signals"
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "title": "Revolution Angular 17",
+    "comments": [
+      {
+        "id": 5,
+        "review": "coment 1"
+      },
+      {
+        "id": 6,
+        "review": "Coment 2"
+      },
+      {
+        "id": 7,
+        "review": "Coment 3"
+      },
+      {
+        "id": 8,
+        "review": "Coment 4"
+      },
+      {
+        "id": 9,
+        "review": "Coment 5"
+      }
+    ]
+  }
+]
+````
+
+````bash
+2024-03-06T23:56:24.898-05:00 DEBUG 9532 --- [spring-boot-jpa-projections] [nio-8080-exec-5] org.hibernate.SQL                        : 
+    SELECT
+        p.id AS p_id,
+        p.title AS p_title,
+        pc.id AS pc_id,
+        pc.review AS pc_review 
+    FROM
+        posts AS p     
+    INNER JOIN
+        post_comments AS pc 
+            ON(p.id = pc.post_id) 
+    WHERE
+        p.title = ? 
+    ORDER BY
+        pc.id
+````

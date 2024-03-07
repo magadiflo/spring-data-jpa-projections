@@ -25,4 +25,10 @@ public class PostRestController {
         List<PostDTO> postDTOList = this.postRepository.findPostDTOByTitle(postTitle);
         return ResponseEntity.ok(postDTOList);
     }
+
+    @GetMapping(path = "/dto-with-to-many-associations-program")
+    public ResponseEntity<List<PostDTO>> getPostDTOByTitleProgrammatically(@RequestParam String postTitle) {
+        List<PostDTO> postDTOList = this.postRepository.findPostDTOByTitleProgrammatically(postTitle);
+        return ResponseEntity.ok(postDTOList);
+    }
 }

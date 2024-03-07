@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface CustomPostRepository {
     List<PostDTO> findPostDTOByTitle(String postTitle);
+    List<PostDTO> findPostDTOByTitleProgrammatically(String postTitle);
 }
