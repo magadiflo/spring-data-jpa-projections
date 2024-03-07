@@ -23,7 +23,6 @@ public class PostRestController {
     @GetMapping(path = "/dto-with-to-many-associations")
     public ResponseEntity<List<PostDTO>> getPostDTOByTitle(@RequestParam String postTitle) {
         List<PostDTO> postDTOList = this.postRepository.findPostDTOByTitle(postTitle);
-        log.info(postDTOList.toString());
         return ResponseEntity.ok(postDTOList);
     }
 }

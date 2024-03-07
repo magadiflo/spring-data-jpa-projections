@@ -36,8 +36,6 @@ public class PostDTOTupleTransformer implements TupleTransformer<PostDTO>, Resul
 
     @Override
     public List<PostDTO> transformList(List<PostDTO> resultList) {
-        log.info("r: {}", resultList);
-        log.info("m. {}", postDTOMap.values());
         return new ArrayList<>(postDTOMap.values());
     }
 

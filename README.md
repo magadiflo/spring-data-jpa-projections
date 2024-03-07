@@ -1558,3 +1558,58 @@ public class PostRestController {
 Observar que estamos inyectando el `PostRepository` y no el `CustomPostRepository`, eso está bien, ya que la interfaz
 `PostRepository` está extendiendo de la interfaz `CustomPostRepository`.
 
+### Verificando la proyección DTO jerárquica
+
+Ejecutamos la aplicación y vemos el siguiente resultado:
+
+````bash
+$ curl -v -G --data "postTitle=Revolution+Angular+17" http://localhost:8080/api/v1/posts/dto-with-to-many-associations | jq
+
+>
+< HTTP/1.1 200
+<
+[
+  {
+    "id": 2,
+    "title": "Revolution Angular 17",
+    "comments": [
+      {
+        "id": 2,
+        "review": "Se vienen nuevos cambios"
+      },
+      {
+        "id": 3,
+        "review": "La nueva sintaxis parece se ve más entendible"
+      },
+      {
+        "id": 4,
+        "review": "Se ha agregado el uso de Signals"
+      }
+    ]
+  }
+]
+````
+
+El resultado de la consulta SQL generado en consola es el siguiente:
+
+````bash
+2024-03-06T20:39:02.952-05:00 DEBUG 2696 --- [spring-boot-jpa-projections] [nio-8080-exec-2] org.hibernate.SQL                        : 
+    SELECT
+        p.id AS p_id,
+        p.title AS p_title,
+        pc.id AS pc_id,
+        pc.review AS pc_review 
+    FROM
+        posts AS p     
+    INNER JOIN
+        post_comments AS pc 
+            ON(p.id = pc.post_id) 
+    WHERE
+        p.title = ? 
+    ORDER BY
+        pc.id
+````
+
+Como observamos, solo se ha ejecutado una consulta, nuestra consulta y gracias al uso de las interfaces
+`TupleTransformer` y `ResultListTransformer` es que se ha podido transformar el resultado de la consulta en la
+jerarquía de clases especificadas que finalmente se han convertido en el resultado observado.
