@@ -2,7 +2,7 @@ package dev.magadiflo.projections.app.context;
 
 import dev.magadiflo.projections.app.persistence.entity.Post;
 import dev.magadiflo.projections.app.persistence.entity.PostComment;
-import dev.magadiflo.projections.app.persistence.repository.IPostRepository;
+import dev.magadiflo.projections.app.persistence.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
@@ -15,7 +15,7 @@ import java.time.LocalDate;
 @Component
 public class PopulatorPostAndPostComment implements InitializingBean {
 
-    private final IPostRepository postRepository;
+    private final PostRepository postRepository;
 
     @Override
     public void afterPropertiesSet() throws Exception {
@@ -47,8 +47,11 @@ public class PopulatorPostAndPostComment implements InitializingBean {
         PostComment postComment3 = new PostComment();
         postComment3.setReview("La nueva sintaxis parece se ve más entendible");
 
+        PostComment postComment4 = new PostComment();
+        postComment4.setReview("Se ha agregado el uso de Signals");
+
         post1.addComment(postComment1);
-        post2.addComment(postComment2).addComment(postComment3);
+        post2.addComment(postComment2).addComment(postComment3).addComment(postComment4);
 
         log.info("Poblando tabla posts con sus post_comments");
         this.postRepository.save(post1);

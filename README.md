@@ -666,8 +666,8 @@ asociación entre ellas:
 
 > La asociación que se usa entre las clases de entidad `Post` y `PostComment` es
 > `bidireccional: @OneToMany - @ManyToOne`
-> 
-> Para más información sobre asociaciones `unidireccionales` y `bidireccionales` visitar 
+>
+> Para más información sobre asociaciones `unidireccionales` y `bidireccionales` visitar
 > [spring-boot-asociaciones-jpa-hibernate](https://github.com/magadiflo/spring-boot-asociaciones-jpa-hibernate)
 
 ````java
@@ -1279,3 +1279,282 @@ select
     order by
         pc1_0.id
 ````
+
+## Obteniendo una proyección DTO jerárquica
+
+Se puede obtener proyecciones DTO jerárquicas con Spring Data JPA.
+
+Suponiendo que tenemos las siguientes clases `PostDTO` y `PostCommentDTO`:
+
+````java
+
+@ToString
+@Getter
+public class PostDTO {
+
+    private final Long id;
+    private final String title;
+    private final List<PostCommentDTO> comments = new ArrayList<>();
+
+    public PostDTO(Long id, String title) {
+        this.id = id;
+        this.title = title;
+    }
+}
+````
+
+````java
+
+@ToString
+@Getter
+public class PostCommentDTO {
+
+    private final Long id;
+    private final String review;
+
+    public PostCommentDTO(Long id, String review) {
+        this.id = id;
+        this.review = review;
+    }
+}
+````
+
+De hecho, podemos recuperar la estructura jerárquica de DTO utilizando Hibernate `TupleTransformer` y
+`ResultListTransformer` (versiones a partir de `Hibernate 6`).
+
+**NOTA**
+> Anteriormente en `hibernate 4 y 5` se usaba el `ResultTransformer`, actualmente esa interfaz está `deprecada`.
+
+Para poder hacer eso, necesitamos un `repositorio Spring Data JPA personalizado`, veamos la documentación oficial
+de spring para ver cómo es que se crea la implementación de un repositorio presonalizado.
+
+### [Implementaciones de repositorios personalizados (documentación)](https://docs.spring.io/spring-data/jpa/reference/repositories/custom-implementations.html)
+
+Spring Data proporciona varias opciones para crear métodos de consulta con poca codificación. Pero cuando esas opciones
+no se ajustan a sus necesidades, también puede proporcionar su propia **implementación personalizada** para los métodos
+del repositorio. Esta sección describe cómo hacerlo.
+
+Para enriquecer un repositorio con funcionalidad personalizada, primero debe definir una interfaz de fragmento y una
+implementación para la funcionalidad personalizada, de la siguiente manera:
+
+**Interfaz para funcionalidad de repositorio personalizado**
+
+````java
+interface CustomizedUserRepository {
+    void someCustomMethod(User user);
+}
+````
+
+**Implementación de la funcionalidad de repositorio personalizado**
+
+````java
+class CustomizedUserRepositoryImpl implements CustomizedUserRepository {
+
+    public void someCustomMethod(User user) {
+        // Your custom implementation
+    }
+}
+````
+
+**IMPORTANTE**
+> La parte más importante del nombre de clase que corresponde a la interfaz del fragmento es el sufijo `Impl`,
+> es decir, si nuestra interfaz personalizada se llama `CustomizedUserRepository`, la implementación debe tener el mismo
+> nombre finalizando con el sufijo `Impl`, eso significa que tendría este nombre: `CustomizedUserRepositoryImpl`.
+
+Ahora, es muy importante seguir la convención anterior si es que el repositorio personalizado lo vamos a usar junto con
+una interfaz de repositorio propio de `Spring Data JPA`, por ejemplo, junto con el `CrudRepository`:
+
+````java
+interface UserRepository extends CrudRepository<User, Long>, CustomizedUserRepository {
+    // Declare query methods here
+}
+````
+
+En el código de ejemplo anterior, estamos usando la intefaz de spring data jpa `CrudRepository` junto a nuestra interfaz
+personalizada `CustomizedUserRepository`, en ese sentido, debemos seguir la convención de nombre que mostramos en el
+apartado superior, ya que sino, nos va a mostrar errores.
+
+Ahora, si creamos una interfaz de repositorio junto a su implementación y este no va a ser incluido junto con alguna
+interfaz propia de Spring Data JPA, entonces no tendríamos ningún problema con la convención de nombres.
+
+### Implementando nuestro repositorio personalizado
+
+Luego de haber visto la manera de cómo crear una implementación de un repositorio personalizado, es momento de crear el
+nuestro teniendo en cuenta las consideraciones señaladas:
+
+````java
+public interface CustomPostRepository {
+    List<PostDTO> findPostDTOByTitle(String postTitle);
+}
+````
+
+Creamos la implementación de nuestro repositorio:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@Repository
+public class CustomPostRepositoryImpl implements CustomPostRepository {
+
+    private final EntityManager entityManager;
+
+    @Override
+    @SuppressWarnings("unchecked") // Para que no salga el warning al usar el getResultList()
+    public List<PostDTO> findPostDTOByTitle(String postTitle) {
+        PostDTOTupleTransformer postDTOTupleTransformer = new PostDTOTupleTransformer();
+
+        return this.entityManager.createNativeQuery("""
+                        SELECT p.id AS p_id,
+                                p.title AS p_title,
+                                pc.id AS pc_id,
+                                pc.review AS pc_review
+                        FROM posts AS p
+                            INNER JOIN post_comments AS pc ON(p.id = pc.post_id)
+                        WHERE p.title = :postTitle
+                        ORDER BY pc.id
+                        """)
+                .setParameter("postTitle", postTitle)
+                .unwrap(Query.class)
+                .setTupleTransformer(postDTOTupleTransformer)
+                .setResultListTransformer(postDTOTupleTransformer)
+                .getResultList();
+    }
+}
+````
+
+Como este repositorio será usado junto al repositorio de Spring Data JPA `JpaRepository`, necesitamos que la
+implementación siga la convención de nombre señalada, es decir, el nombre de la clase debe finalizar con `Impl`.
+
+Ahora, nuestro repositorio `PostRepository` usará tanto el repositorio `JpaRepository` de `Spring Data JPA` como el
+repositorio personalizado que hemos creado `CustomPostRepository`:
+
+````java
+public interface PostRepository extends JpaRepository<Post, Long>, CustomPostRepository {
+}
+````
+
+En la implementación de nuestro repositorio personalizado observamos el uso de la clase `PostDTOTupleTransformer`, clase
+que implementa dos interfaces `TupleTransformer` y `ResultListTransformer`, los cuales nos permitirán hacer la
+transformación de la proyección SQL a nuestras
+clases DTO creadas al inicio.
+
+````java
+
+@Slf4j
+public class PostDTOTupleTransformer implements TupleTransformer<PostDTO>, ResultListTransformer<PostDTO> {
+
+    private static final String POST_ID = "p_id";
+    private static final String POST_TITLE = "p_title";
+    private static final String POST_COMMENT_ID = "pc_id";
+    private static final String POST_COMMENT_REVIEW = "pc_review";
+    private final Map<Long, PostDTO> postDTOMap = new LinkedHashMap<>();
+
+    /**
+     * transformTuple(), se ejecuta por cada fila del conjunto de resultados obtenidos en la consulta.
+     * Las tuplas son los elementos que componen cada "fila" del resultado de la consulta.
+     * El contrato aquí es transformar estos elementos en la forma de fila final.
+     *
+     * Ejemplo:
+     * Object[] tuple:   [2, "Revolution Angular 17", 2, "Se vienen nuevos cambios"]
+     * String[] aliases: ["p_id", "p_title", "pc_id", "pc_review"]
+     *
+     * Los aliases que se observan, son las que se han definido en la consulta. Cada aliases corresponde con su
+     * respectivo valor en el arreglo tuple.
+     *
+     * @param tuple, los elementos del resultado.
+     * @param aliases, los alias resultantes (matriz "paralela" a la tupla)                 
+     * @return la fila transformada.
+     */
+    @Override
+    public PostDTO transformTuple(Object[] tuple, String[] aliases) {
+        List<String> aliasList = Arrays.asList(aliases);
+        Map<String, Object> rowMap = aliasList.stream().collect(Collectors.toMap(alias -> alias, alias -> tuple[aliasList.indexOf(alias)]));
+
+        Long postId = (Long) rowMap.get(POST_ID);
+        String postTitle = (String) rowMap.get(POST_TITLE);
+        Long postCommentId = (Long) rowMap.get(POST_COMMENT_ID);
+        String postCommentReview = (String) rowMap.get(POST_COMMENT_REVIEW);
+
+        /**
+         * ComputeIfAbsent(), Si la clave especificada aún no está asociada con un valor (o está asignada a nulo), 
+         * intenta calcular su valor usando la función de mapeo dada y lo ingresa en este mapa a menos que sea nulo.
+         *
+         * El método ComputeIfAbsent() de Map (y HashMap) toma dos parámetros. El primer parámetro es la key. 
+         * El segundo parámetro es la función de mapeo. En este método (computeIfAbsent), la función de mapeo solo se 
+         * llama si no se presenta el mapeo, es decir, si en el primer parámetro se especifica una key que no existe 
+         * en el mapa (this.postDTOMap), entonces se ejecutará el segundo parámetro, que es la función de mapeo.
+         *
+         * La función computeIfAbsent(), retorna el valor actual (existente o calculado) asociado con la clave 
+         * especificada, o nulo si el valor calculado es nulo.
+         */
+        PostDTO currentPostDTO = this.postDTOMap.computeIfAbsent(postId, pId -> new PostDTO(pId, postTitle));
+
+        PostCommentDTO postCommentDTO = new PostCommentDTO(postCommentId, postCommentReview);
+        currentPostDTO.getComments().add(postCommentDTO);
+
+        return currentPostDTO;
+    }
+
+    /**
+     * transformList(), se ejecuta una vez. Aquí tenemos la oportunidad de realizar una transformación en el resultado 
+     * de la consulta en su conjunto. Esto puede resultar útil para convertir de un tipo de colección a otro o para 
+     * eliminar duplicados del resultado, etc.
+     *
+     * @param resultList, La lista de resultados que de otro modo se devolvería de la consulta sin la 
+     *                    intervención de este ResultListTransformer
+     * @return el resultado transformado.
+     */
+    @Override
+    public List<PostDTO> transformList(List<PostDTO> resultList) {
+        log.info("resultList: {}", resultList);
+        log.info("postDTOMap: {}", postDTOMap.values());
+        return new ArrayList<>(postDTOMap.values());
+    }
+
+}
+````
+
+En el método `transformList` estamos ignorando el uso de la Lista transformada del resultado `(resultList)` y en
+su lugar estamos utilizando el `postDTOMap` dentro de un `ArrayList` para retornar el resultado de la consulta.
+Hacemos eso ya que el `resultList` viene con datos duplicados, mientras que nuestro `postDTOMap` contiene los valores
+sin duplicado.
+
+Podríamos usar el `resultList.stream().distinct().toList()` como valor de retorno en la función `transformList`, pero
+eso implica realizar operaciones para eliminar duplicados, es un costo de procesamiento, mientras que el `postDTOMap` ya
+contiene los datos sin duplicado, así que no nos hacemos problemas.
+
+Veamos el siguiente resultado, estamos imprimiendo los valores del `resultList` y los valores del `postDTOMap`:
+
+````bash
+resultList: [PostDTO(id=2, title=Revolution Angular 17, comments=[PostCommentDTO(id=2, review=Se vienen nuevos cambios), PostCommentDTO(id=3, review=La nueva sintaxis parece se ve más entendible), PostCommentDTO(id=4, review=Se ha agregado el uso de Signals)]), PostDTO(id=2, title=Revolution Angular 17, comments=[PostCommentDTO(id=2, review=Se vienen nuevos cambios), PostCommentDTO(id=3, review=La nueva sintaxis parece se ve más entendible), PostCommentDTO(id=4, review=Se ha agregado el uso de Signals)]), PostDTO(id=2, title=Revolution Angular 17, comments=[PostCommentDTO(id=2, review=Se vienen nuevos cambios), PostCommentDTO(id=3, review=La nueva sintaxis parece se ve más entendible), PostCommentDTO(id=4, review=Se ha agregado el uso de Signals)])]
+postDTOMap: [PostDTO(id=2, title=Revolution Angular 17, comments=[PostCommentDTO(id=2, review=Se vienen nuevos cambios), PostCommentDTO(id=3, review=La nueva sintaxis parece se ve más entendible), PostCommentDTO(id=4, review=Se ha agregado el uso de Signals)])]
+````
+
+Como observamos, el `resultList` contiene duplicados, mientras que nuestro `postDTOMap` no las tiene.
+
+Finalmente, creamos un controlador, desde donde llamaremos a nuestro repositorio personalizado (ojo, que las buenas
+prácticas requieren que se cree servicios y no usar directamente el repositorio en el controlador):
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping(path = "/api/v1/posts")
+public class PostRestController {
+
+    private final PostRepository postRepository;
+
+    @GetMapping(path = "/dto-with-to-many-associations")
+    public ResponseEntity<List<PostDTO>> getPostDTOByTitle(@RequestParam String postTitle) {
+        List<PostDTO> postDTOList = this.postRepository.findPostDTOByTitle(postTitle);
+        log.info(postDTOList.toString());
+        return ResponseEntity.ok(postDTOList);
+    }
+}
+````
+
+Observar que estamos inyectando el `PostRepository` y no el `CustomPostRepository`, eso está bien, ya que la interfaz
+`PostRepository` está extendiendo de la interfaz `CustomPostRepository`.
+
